@@ -1,0 +1,9 @@
+.stubs/
+.venv/
+.vfscache/
+.vfsmeta/
+.vscode/
+__pycache__/
+*.pyc
+*.parquet
+.DS_Store

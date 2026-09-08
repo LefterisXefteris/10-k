@@ -1,0 +1,9 @@
+.stubs
+.vfscache
+.vfsmeta
+.vscode
+__pycache__
+*.pyc
+.git
+*.csv
+*.parquet

@@ -1,0 +1,25 @@
+services:
+  airflow:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      PARQUET_PATH: /opt/airflow/data/sec_ai_10k.parquet
+    volumes:
+      - ./see.py:/opt/airflow/dags/see.py
+      - ./sec_ai_10k.parquet:/opt/airflow/data/sec_ai_10k.parquet
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    ports:
+      - "8000:8000"
+    environment:
+      PARQUET_PATH: /data/sec_ai_10k.parquet
+    volumes:
+      - ./sec_ai_10k.parquet:/data/sec_ai_10k.parquet:ro
+    restart: unless-stopped
