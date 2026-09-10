@@ -7,3 +7,9 @@ __pycache__/
 *.pyc
 *.parquet
 .DS_Store
+*.duckdb
+*.duckdb.wal
+logs/
+transform/target/
+transform/dbt_packages/
+transform/logs/

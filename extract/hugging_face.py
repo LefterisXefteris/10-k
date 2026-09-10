@@ -3,14 +3,19 @@ v2: read distinct companies from sec_ai_10k.parquet,
 ask Hugging Face for models only when the author clearly matches,
 and save everything into one Parquet file.
 
+Unique orgs are fetched concurrently (HF_WORKERS, default 8).
+Each org is requested once, then joined back to companies.
+
 Example call: https://huggingface.co/api/models?author=Snowflake
 
 v2 is stricter than v1: it never guesses from the first word
 (that matched Allegro Microsystems to the unrelated org "allegro").
 """
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 import json
+import os
 import re
 import time
 from urllib.parse import quote
@@ -19,12 +24,21 @@ from urllib.request import Request, urlopen
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-PARQUET_IN = Path(__file__).resolve().parent / "sec_ai_10k.parquet"
-PARQUET_OUT = Path(__file__).resolve().parent / "hf_models.parquet"
+DATA_DIR = Path(
+    os.environ.get(
+        "DATA_DIR",
+        Path(__file__).resolve().parent.parent / "data",
+    )
+)
+PARQUET_IN = DATA_DIR / "sec_ai_10k.parquet"
+PARQUET_OUT = DATA_DIR / "hf_models.parquet"
 HF_URL = "https://huggingface.co/api/models?author="
 
-# Change this to a small number while testing (e.g. 5). None = all companies.
-MAX_COMPANIES = None
+# HF_MAX_COMPANIES=5 while testing. Unset = all companies.
+_max_companies = os.environ.get("HF_MAX_COMPANIES", "").strip()
+MAX_COMPANIES = int(_max_companies) if _max_companies else None
+_max_workers = os.environ.get("HF_WORKERS", "8").strip()
+MAX_WORKERS = max(1, int(_max_workers) if _max_workers else 8)
 
 # Tickers whose Hugging Face org is not the company name.
 # Alphabet != google, Meta Platforms != facebook, AMD != "advanced micro devices".
@@ -85,6 +99,8 @@ SCHEMA = pa.schema(
 
 def distinct_companies():
     """Return unique company names from the SEC Parquet file, sorted."""
+    if not PARQUET_IN.exists():
+        raise FileNotFoundError(f"Missing {PARQUET_IN}")
     names = set(pq.read_table(PARQUET_IN, columns=["company"]).column("company").to_pylist())
     return sorted(name for name in names if name)
 
@@ -168,6 +184,53 @@ def fetch_models(org):
     return [m for m in models if (m.get("id") or "").startswith(prefix)]
 
 
+def fetch_org(org):
+    """One Hub request. Sleep after the call so workers stay polite."""
+    try:
+        models = fetch_models(org)
+        time.sleep(0.1)
+        return org, models, None
+    except Exception as exc:
+        time.sleep(0.1)
+        return org, [], exc
+
+
+def unique_orgs(company_orgs):
+    """Preserve first-seen order so later joins stay stable."""
+    orgs = []
+    seen = set()
+    for _, candidates in company_orgs:
+        for org in candidates:
+            if org not in seen:
+                seen.add(org)
+                orgs.append(org)
+    return orgs
+
+
+def fetch_orgs(orgs):
+    """Fetch each unique org once, concurrently."""
+    models_by_org = {}
+    if not orgs:
+        return models_by_org
+
+    workers = min(MAX_WORKERS, len(orgs))
+    print(f"Fetching {len(orgs)} unique orgs with {workers} workers")
+    done = 0
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = [pool.submit(fetch_org, org) for org in orgs]
+        for future in as_completed(futures):
+            org, models, error = future.result()
+            models_by_org[org] = models
+            done += 1
+            if error:
+                print(f"[{done}/{len(orgs)}] error {org}: {error}")
+            elif models:
+                print(f"[{done}/{len(orgs)}] {org}: {len(models)} models")
+            elif done % 50 == 0:
+                print(f"[{done}/{len(orgs)}] still fetching")
+    return models_by_org
+
+
 def models_to_rows(company, org, models):
     """Turn Hugging Face JSON into flat Parquet rows."""
     rows = []
@@ -190,51 +253,38 @@ def models_to_rows(company, org, models):
 
 
 def write_rows(rows):
+    PARQUET_OUT.parent.mkdir(parents=True, exist_ok=True)
     table = pa.Table.from_pylist(rows, schema=SCHEMA) if rows else SCHEMA.empty_table()
     pq.write_table(table, PARQUET_OUT)
 
 
-def main():
+def main(**context):
     companies = distinct_companies()
     if MAX_COMPANIES is not None:
         companies = companies[:MAX_COMPANIES]
     print(f"Found {len(companies)} distinct companies")
 
+    company_orgs = [(company, orgs_to_try(company)) for company in companies]
+    models_by_org = fetch_orgs(unique_orgs(company_orgs))
+
     all_rows = []
-    total_models = 0
     companies_with_models = 0
-    for i, company in enumerate(companies, start=1):
-        models = []
+    for company, candidates in company_orgs:
         org_used = None
-        try:
-            for org in orgs_to_try(company):
-                models = fetch_models(org)
-                time.sleep(0.1)
-                if models:
-                    org_used = org
-                    break
-        except Exception as e:
-            print(f"[{i}/{len(companies)}] error {e}")
-            continue
-
+        models = []
+        for org in candidates:
+            models = models_by_org.get(org) or []
+            if models:
+                org_used = org
+                break
         if not models:
-            if i % 100 == 0:
-                print(
-                    f"[{i}/{len(companies)}] still scanning "
-                    f"({companies_with_models} companies with models so far)"
-                )
             continue
-
-        rows = models_to_rows(company, org_used, models)
-        all_rows.extend(rows)
-        write_rows(all_rows)
-        total_models += len(rows)
+        all_rows.extend(models_to_rows(company, org_used, models))
         companies_with_models += 1
-        print(f"[{i}/{len(companies)}] {org_used}: {len(models)} models")
 
     write_rows(all_rows)
     print(
-        f"Saved {total_models} models from {companies_with_models} companies "
+        f"Saved {len(all_rows)} models from {companies_with_models} companies "
         f"to {PARQUET_OUT}"
     )
 

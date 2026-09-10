@@ -1,0 +1,33 @@
+version: 2
+
+sources:
+  - name: landing
+    description: Raw parquet files from the SEC 10-K and Hugging Face extractors.
+    tables:
+      - name: sec_filings
+        description: 10-K / 10-K/A filings that mention artificial intelligence.
+        config:
+          external_location: "{{ var('landing_dir') }}/sec_ai_10k.parquet"
+        columns:
+          - name: file_id
+          - name: company
+          - name: cik
+          - name: form
+          - name: file_date
+          - name: period_ending
+          - name: location
+          - name: accession
+      - name: hf_models
+        description: Hugging Face models matched to SEC filing companies.
+        config:
+          external_location: "{{ var('landing_dir') }}/hf_models.parquet"
+        columns:
+          - name: company
+          - name: org
+          - name: model_id
+          - name: downloads
+          - name: likes
+          - name: pipeline_tag
+          - name: library_name
+          - name: created_at
+          - name: tags

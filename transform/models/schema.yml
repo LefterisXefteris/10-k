@@ -1,0 +1,99 @@
+version: 2
+
+models:
+  - name: companies
+    description: One legal entity. CIK is the SEC identifier (10 digits, keep leading zeros).
+    columns:
+      - name: cik
+        data_tests:
+          - unique
+          - not_null
+      - name: name
+        data_tests:
+          - not_null
+
+  - name: company_tickers
+    description: A company can have several tickers, e.g. (LAAI, VEST) or (NEE, NEE-PN).
+    data_tests:
+      - unique_combination:
+          arguments:
+            column_names: [cik, ticker]
+    columns:
+      - name: cik
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('companies')
+                field: cik
+      - name: ticker
+        data_tests:
+          - not_null
+
+  - name: filings
+    description: One 10-K / 10-K/A document.
+    columns:
+      - name: file_id
+        data_tests:
+          - unique
+          - not_null
+      - name: form
+        data_tests:
+          - not_null
+
+  - name: filing_companies
+    description: Many-to-many. One accession can name parent + subsidiary.
+    data_tests:
+      - unique_combination:
+          arguments:
+            column_names: [file_id, cik]
+    columns:
+      - name: file_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('filings')
+                field: file_id
+      - name: cik
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('companies')
+                field: cik
+
+  - name: hf_models
+    description: One Hugging Face model. cik links back to the SEC company when we can parse it.
+    columns:
+      - name: model_id
+        data_tests:
+          - unique
+          - not_null
+      - name: org
+        data_tests:
+          - not_null
+      - name: cik
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('companies')
+                field: cik
+
+  - name: model_tags
+    description: Hugging Face tags exploded from the semicolon-separated landing column.
+    data_tests:
+      - unique_combination:
+          arguments:
+            column_names: [model_id, tag]
+    columns:
+      - name: model_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('hf_models')
+                field: model_id
+      - name: tag
+        data_tests:
+          - not_null

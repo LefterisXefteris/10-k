@@ -1,0 +1,27 @@
+name: sec_ai
+version: "1.0.0"
+config-version: 2
+profile: sec_ai
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+clean-targets:
+  - target
+  - dbt_packages
+
+flags:
+  send_anonymous_usage_stats: false
+
+vars:
+  landing_dir: "../data"
+
+models:
+  sec_ai:
+    +materialized: table
+    staging:
+      +materialized: view

@@ -1,25 +1,31 @@
 services:
   airflow:
     build:
-      context: .
+      context: ./airflow
       dockerfile: Dockerfile
     ports:
       - "8080:8080"
     environment:
-      PARQUET_PATH: /opt/airflow/data/sec_ai_10k.parquet
+      DATA_DIR: /opt/airflow/data
+      EXTRACT_DIR: /opt/airflow/extract
+      TRANSFORM_DIR: /opt/airflow/transform
+      DBT_DUCKDB_PATH: /opt/airflow/transform/warehouse.duckdb
+      PYTHONPATH: /opt/airflow/extract
     volumes:
-      - ./see.py:/opt/airflow/dags/see.py
-      - ./sec_ai_10k.parquet:/opt/airflow/data/sec_ai_10k.parquet
+      - ./airflow/dags:/opt/airflow/dags
+      - ./extract:/opt/airflow/extract
+      - ./data:/opt/airflow/data
+      - ./transform:/opt/airflow/transform
     restart: unless-stopped
 
   api:
     build:
-      context: .
-      dockerfile: Dockerfile.api
+      context: ./api
+      dockerfile: Dockerfile
     ports:
       - "8000:8000"
     environment:
       PARQUET_PATH: /data/sec_ai_10k.parquet
     volumes:
-      - ./sec_ai_10k.parquet:/data/sec_ai_10k.parquet:ro
+      - ./data:/data:ro
     restart: unless-stopped

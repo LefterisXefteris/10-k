@@ -2,8 +2,13 @@
 .vfscache
 .vfsmeta
 .vscode
+.venv
+.git
 __pycache__
 *.pyc
-.git
 *.csv
 *.parquet
+*.duckdb
+transform/target
+transform/logs
+logs
