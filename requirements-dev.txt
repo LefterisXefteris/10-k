@@ -1,0 +1,6 @@
+pytest>=8,<9
+pyarrow
+requests
+fastapi
+httpx
+dbt-duckdb>=1.9,<2
