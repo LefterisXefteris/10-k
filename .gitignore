@@ -4,6 +4,7 @@
 .vfsmeta/
 .vscode/
 __pycache__/
+.pytest_cache/
 *.pyc
 *.parquet
 .DS_Store
